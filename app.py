@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.3.0-bbc-scraper"
+APP_VERSION = "v2.3.1-bbc-debug"
 import requests
 from typing import Dict, List, Optional
 
@@ -1048,6 +1048,70 @@ def delete_manual_match(event_id):
         return jsonify({"success": True, "message": "Match deleted"})
     else:
         return jsonify({"success": False, "message": "Match not found"}), 404
+
+
+@app.route("/debug/bbc")
+def debug_bbc():
+    """Debug endpoint to see BBC's HTML structure"""
+    try:
+        from bbc_scraper import BBC_SCOTTISH_LEAGUES
+        import requests
+        from bs4 import BeautifulSoup
+        
+        league = request.args.get("league", "sco.4")
+        
+        if league not in BBC_SCOTTISH_LEAGUES:
+            return jsonify({"error": "Invalid league"}), 400
+        
+        url = BBC_SCOTTISH_LEAGUES[league]
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Find all possible match containers
+        debug_info = {
+            "url": url,
+            "status_code": resp.status_code,
+            "title": soup.title.string if soup.title else None,
+            "total_elements": len(soup.find_all()),
+            "potential_matches": {}
+        }
+        
+        # Try to find elements that might contain matches
+        patterns = [
+            'fixture', 'match', 'event', 'game',
+            'qa-fixture', 'sp-c-fixture',
+            'gel-layout', 'gs-c'
+        ]
+        
+        for pattern in patterns:
+            elements = soup.find_all(class_=lambda x: x and pattern in x.lower())
+            if elements:
+                debug_info["potential_matches"][pattern] = {
+                    "count": len(elements),
+                    "first_element_classes": elements[0].get('class') if elements else None,
+                    "first_element_html": str(elements[0])[:500] if elements else None
+                }
+        
+        # Look for any "vs" text
+        vs_texts = soup.find_all(string=lambda text: text and 'v' in text.lower())
+        debug_info["vs_count"] = len([t for t in vs_texts if len(t.strip()) > 5])
+        
+        # Sample of the HTML
+        debug_info["html_sample"] = str(soup)[:2000]
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 @app.route("/admin")

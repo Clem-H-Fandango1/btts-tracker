@@ -38,9 +38,9 @@ def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
     
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=15)
         
         if resp.status_code != 200:
             print(f"BBC scrape failed for {league_code}: HTTP {resp.status_code}")
@@ -48,13 +48,35 @@ def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
         
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Find all match containers
-        # BBC uses different structures, try multiple selectors
-        match_elements = soup.find_all('article', class_=re.compile('sp-c-fixture'))
+        # Debug: Save a snippet of the HTML to see structure
+        print(f"BBC page title: {soup.title.string if soup.title else 'No title'}")
+        print(f"BBC page has {len(soup.find_all())} total HTML elements")
+        
+        # BBC uses multiple possible structures - try all of them
+        match_elements = []
+        
+        # Try method 1: article tags with fixture classes
+        match_elements = soup.find_all('article', class_=re.compile('(fixture|event|match)', re.I))
         
         if not match_elements:
-            # Try alternative structure
-            match_elements = soup.find_all('div', class_=re.compile('fixture'))
+            # Try method 2: div tags with fixture/match classes  
+            match_elements = soup.find_all('div', class_=re.compile('(fixture|event|match)', re.I))
+        
+        if not match_elements:
+            # Try method 3: li elements (sometimes used in lists)
+            match_elements = soup.find_all('li', class_=re.compile('(fixture|event|match)', re.I))
+        
+        if not match_elements:
+            # Try method 4: Look for any element with team names in data attributes
+            match_elements = soup.find_all(attrs={'data-home': True, 'data-away': True})
+        
+        if not match_elements:
+            # Try method 5: Find elements containing "vs" text pattern
+            all_text_elements = soup.find_all(string=re.compile(r'\w+\s+vs\s+\w+', re.I))
+            print(f"BBC scraper found {len(all_text_elements)} 'vs' patterns for {league_code}")
+            # This is a last resort - would need more complex parsing
+        
+        print(f"BBC scraper found {len(match_elements)} potential match elements for {league_code}")
         
         for match_elem in match_elements:
             try:
@@ -65,10 +87,12 @@ def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
                 print(f"Error parsing match element: {e}")
                 continue
         
-        print(f"BBC scraper found {len(matches)} matches for {league_code}")
+        print(f"BBC scraper successfully parsed {len(matches)} matches for {league_code}")
         
     except Exception as e:
         print(f"BBC scrape error for {league_code}: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
     
     return matches
 
