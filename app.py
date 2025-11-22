@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.3.4-enhanced-debug"
+APP_VERSION = "v2.4.0-debug-dashboard"
 import requests
 from typing import Dict, List, Optional
 
@@ -1184,6 +1184,403 @@ def debug_bbc_detailed():
             <p class="{'error' if result.get('error') else 'success'}">
                 {result.get('error', 'No errors')}
             </p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+@app.route("/debug")
+def debug_dashboard():
+    """
+    Comprehensive debug dashboard showing all app systems.
+    Shows ESPN API, BBC scraper, manual matches, assignments, and system info.
+    """
+    import sys
+    import traceback
+    from datetime import datetime
+    
+    debug_data = {
+        "timestamp": datetime.now().isoformat(),
+        "version": APP_VERSION,
+        "espn_api": {},
+        "bbc_scraper": {},
+        "manual_matches": {},
+        "assignments": {},
+        "system": {},
+        "errors": []
+    }
+    
+    # Test ESPN API
+    try:
+        test_league = "eng.1"  # Premier League
+        espn_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{test_league}/scoreboard"
+        espn_resp = requests.get(espn_url, timeout=5)
+        debug_data["espn_api"] = {
+            "status": "✅ OK" if espn_resp.status_code == 200 else f"❌ Error {espn_resp.status_code}",
+            "status_code": espn_resp.status_code,
+            "test_league": test_league,
+            "test_url": espn_url,
+            "response_size": len(espn_resp.text),
+            "events_found": len(espn_resp.json().get("events", [])) if espn_resp.status_code == 200 else 0
+        }
+    except Exception as e:
+        debug_data["espn_api"] = {
+            "status": f"❌ Failed",
+            "error": str(e)
+        }
+        debug_data["errors"].append({"component": "ESPN API", "error": str(e)})
+    
+    # Test BBC Scraper
+    try:
+        from bbc_scraper import scrape_bbc_fixtures_debug, BBC_SCOTTISH_LEAGUES
+        test_league_code = "sco.4"
+        bbc_result = scrape_bbc_fixtures_debug(test_league_code)
+        debug_data["bbc_scraper"] = {
+            "status": "✅ OK" if bbc_result.get("fixtures") else "⚠️ No fixtures found",
+            "test_league": test_league_code,
+            "test_url": BBC_SCOTTISH_LEAGUES.get(test_league_code),
+            "fixtures_found": len(bbc_result.get("fixtures", [])),
+            "total_links": bbc_result.get("debug", {}).get("total_links", 0),
+            "links_with_v": len(bbc_result.get("debug", {}).get("links_with_v", [])),
+            "sample_fixtures": [f"{f['home_team']} v {f['away_team']}" for f in bbc_result.get("fixtures", [])[:5]],
+            "error": bbc_result.get("error")
+        }
+        if bbc_result.get("error"):
+            debug_data["errors"].append({"component": "BBC Scraper", "error": bbc_result.get("error")})
+    except Exception as e:
+        debug_data["bbc_scraper"] = {
+            "status": f"❌ Failed",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+        debug_data["errors"].append({"component": "BBC Scraper", "error": str(e)})
+    
+    # Check Manual Matches
+    try:
+        manual_matches_file = os.path.join(os.path.dirname(__file__), "manual_matches.json")
+        if os.path.exists(manual_matches_file):
+            with open(manual_matches_file, 'r') as f:
+                manual_data = json.load(f)
+                debug_data["manual_matches"] = {
+                    "status": "✅ File exists",
+                    "file_path": manual_matches_file,
+                    "total_matches": len(manual_data) if isinstance(manual_data, list) else 0,
+                    "matches": manual_data if isinstance(manual_data, list) else []
+                }
+        else:
+            debug_data["manual_matches"] = {
+                "status": "⚠️ File not found",
+                "file_path": manual_matches_file
+            }
+    except Exception as e:
+        debug_data["manual_matches"] = {
+            "status": f"❌ Failed",
+            "error": str(e)
+        }
+        debug_data["errors"].append({"component": "Manual Matches", "error": str(e)})
+    
+    # Check Assignments
+    try:
+        assignments_file = os.path.join(os.path.dirname(__file__), "assignments.json")
+        if os.path.exists(assignments_file):
+            with open(assignments_file, 'r') as f:
+                assignments_data = json.load(f)
+                debug_data["assignments"] = {
+                    "status": "✅ File exists",
+                    "file_path": assignments_file,
+                    "total_assignments": sum(1 for v in assignments_data.values() if v),
+                    "assignments": assignments_data
+                }
+        else:
+            debug_data["assignments"] = {
+                "status": "⚠️ File not found",
+                "file_path": assignments_file
+            }
+    except Exception as e:
+        debug_data["assignments"] = {
+            "status": f"❌ Failed",
+            "error": str(e)
+        }
+        debug_data["errors"].append({"component": "Assignments", "error": str(e)})
+    
+    # System Info
+    try:
+        debug_data["system"] = {
+            "python_version": sys.version,
+            "platform": sys.platform,
+            "cwd": os.getcwd(),
+            "env_vars": {
+                "ADMIN_PASSWORD": "***" if os.environ.get("ADMIN_PASSWORD") else "Not set",
+                "ODDS_PASSWORD": "***" if os.environ.get("ODDS_PASSWORD") else "Not set",
+                "SECRET_KEY": "***" if os.environ.get("SECRET_KEY") else "Not set",
+                "TELEGRAM_BOT_TOKEN": "***" if os.environ.get("TELEGRAM_BOT_TOKEN") else "Not set",
+                "TELEGRAM_CHAT_ID": os.environ.get("TELEGRAM_CHAT_ID", "Not set")
+            }
+        }
+    except Exception as e:
+        debug_data["system"] = {"error": str(e)}
+    
+    # Test API Aggregator
+    try:
+        from api_aggregator import get_all_matches_combined
+        combined_matches = get_all_matches_combined()
+        debug_data["api_aggregator"] = {
+            "status": "✅ OK",
+            "total_matches": len(combined_matches),
+            "matches_by_league": {}
+        }
+        for match in combined_matches:
+            league = match.get("league", "unknown")
+            debug_data["api_aggregator"]["matches_by_league"][league] = debug_data["api_aggregator"]["matches_by_league"].get(league, 0) + 1
+    except Exception as e:
+        debug_data["api_aggregator"] = {
+            "status": f"❌ Failed",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+        debug_data["errors"].append({"component": "API Aggregator", "error": str(e)})
+    
+    # Generate HTML
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>BTTS App Debug Dashboard</title>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ 
+                font-family: 'Courier New', monospace; 
+                padding: 20px; 
+                background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+                color: #00ff00; 
+                min-height: 100vh;
+            }}
+            .header {{
+                text-align: center;
+                padding: 30px;
+                background: #000;
+                border: 2px solid #00ff00;
+                border-radius: 10px;
+                margin-bottom: 30px;
+            }}
+            .header h1 {{ color: #00ffff; font-size: 2.5em; text-shadow: 0 0 10px #00ffff; }}
+            .header p {{ color: #00ff00; margin-top: 10px; }}
+            .nav {{
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+                flex-wrap: wrap;
+            }}
+            .nav a {{
+                padding: 10px 20px;
+                background: #2a2a2a;
+                color: #00ff00;
+                text-decoration: none;
+                border: 1px solid #00ff00;
+                border-radius: 5px;
+                transition: all 0.3s;
+            }}
+            .nav a:hover {{ background: #00ff00; color: #000; }}
+            .section {{ 
+                margin: 20px 0; 
+                padding: 20px; 
+                background: #2a2a2a; 
+                border: 2px solid #00ff00; 
+                border-radius: 10px;
+                box-shadow: 0 0 20px rgba(0, 255, 0, 0.1);
+            }}
+            .section h2 {{ 
+                color: #00ffff; 
+                margin-bottom: 15px; 
+                font-size: 1.8em;
+                text-shadow: 0 0 5px #00ffff;
+            }}
+            .status-ok {{ color: #44ff44; font-weight: bold; }}
+            .status-error {{ color: #ff4444; font-weight: bold; }}
+            .status-warning {{ color: #ffaa00; font-weight: bold; }}
+            pre {{ 
+                white-space: pre-wrap; 
+                word-wrap: break-word; 
+                background: #1a1a1a;
+                padding: 15px;
+                border-radius: 5px;
+                border: 1px solid #00ff00;
+                overflow-x: auto;
+                max-height: 400px;
+            }}
+            .item {{ 
+                padding: 10px; 
+                margin: 5px 0; 
+                background: #1a1a1a; 
+                border-radius: 5px;
+                border-left: 3px solid #00ff00;
+            }}
+            .error-box {{
+                background: #3a1a1a;
+                border: 2px solid #ff4444;
+                padding: 15px;
+                margin: 10px 0;
+                border-radius: 5px;
+            }}
+            .grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 15px;
+                margin: 15px 0;
+            }}
+            .metric {{
+                background: #1a1a1a;
+                padding: 15px;
+                border-radius: 5px;
+                border: 1px solid #00ff00;
+            }}
+            .metric-value {{ font-size: 2em; color: #00ffff; }}
+            .metric-label {{ color: #888; font-size: 0.9em; margin-top: 5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🔍 BTTS App Debug Dashboard</h1>
+            <p>Version: {debug_data["version"]} | Generated: {debug_data["timestamp"]}</p>
+        </div>
+        
+        <div class="nav">
+            <a href="/admin">← Back to Admin</a>
+            <a href="/">Main View</a>
+            <a href="/debug/bbc/detailed?league=sco.4">BBC Scraper Debug</a>
+            <a href="#" onclick="location.reload()">🔄 Refresh</a>
+        </div>
+        
+        {"<div class='section error-box'><h2>❌ Errors Detected</h2>" + ''.join([f"<div class='item'><strong>{e['component']}</strong>: {e['error']}</div>" for e in debug_data['errors']]) + "</div>" if debug_data['errors'] else ""}
+        
+        <div class="section">
+            <h2>📊 Quick Overview</h2>
+            <div class="grid">
+                <div class="metric">
+                    <div class="metric-value">{debug_data['espn_api'].get('status', '❌')}</div>
+                    <div class="metric-label">ESPN API Status</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{debug_data['bbc_scraper'].get('status', '❌')}</div>
+                    <div class="metric-label">BBC Scraper Status</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{debug_data.get('api_aggregator', {}).get('total_matches', 0)}</div>
+                    <div class="metric-label">Total Matches Available</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{debug_data['manual_matches'].get('total_matches', 0)}</div>
+                    <div class="metric-label">Manual Matches</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>⚽ ESPN API</h2>
+            <div class="item">
+                <strong>Status:</strong> <span class="{('status-ok' if '✅' in debug_data['espn_api'].get('status', '') else 'status-error')}">{debug_data['espn_api'].get('status', 'Unknown')}</span>
+            </div>
+            <div class="item">
+                <strong>Test URL:</strong> {debug_data['espn_api'].get('test_url', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Status Code:</strong> {debug_data['espn_api'].get('status_code', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Events Found:</strong> {debug_data['espn_api'].get('events_found', 0)}
+            </div>
+            {f"<div class='item error-box'><strong>Error:</strong> {debug_data['espn_api'].get('error')}</div>" if debug_data['espn_api'].get('error') else ""}
+        </div>
+        
+        <div class="section">
+            <h2>🏴󠁧󠁢󠁳󠁣󠁴󠁿 BBC Scraper</h2>
+            <div class="item">
+                <strong>Status:</strong> <span class="{('status-ok' if '✅' in debug_data['bbc_scraper'].get('status', '') else 'status-warning' if '⚠️' in debug_data['bbc_scraper'].get('status', '') else 'status-error')}">{debug_data['bbc_scraper'].get('status', 'Unknown')}</span>
+            </div>
+            <div class="item">
+                <strong>Test URL:</strong> {debug_data['bbc_scraper'].get('test_url', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Fixtures Found:</strong> {debug_data['bbc_scraper'].get('fixtures_found', 0)}
+            </div>
+            <div class="item">
+                <strong>Total Links:</strong> {debug_data['bbc_scraper'].get('total_links', 0)}
+            </div>
+            <div class="item">
+                <strong>Links with ' v ':</strong> {debug_data['bbc_scraper'].get('links_with_v', 0)}
+            </div>
+            {f"<div class='item'><strong>Sample Fixtures:</strong><ul>{''.join([f'<li>{f}</li>' for f in debug_data['bbc_scraper'].get('sample_fixtures', [])])}</ul></div>" if debug_data['bbc_scraper'].get('sample_fixtures') else ""}
+            {f"<div class='item error-box'><strong>Error:</strong><pre>{debug_data['bbc_scraper'].get('error')}</pre></div>" if debug_data['bbc_scraper'].get('error') else ""}
+            {f"<div class='item error-box'><strong>Traceback:</strong><pre>{debug_data['bbc_scraper'].get('traceback')}</pre></div>" if debug_data['bbc_scraper'].get('traceback') else ""}
+        </div>
+        
+        <div class="section">
+            <h2>🔧 API Aggregator</h2>
+            <div class="item">
+                <strong>Status:</strong> <span class="{('status-ok' if '✅' in debug_data.get('api_aggregator', {}).get('status', '') else 'status-error')}">{debug_data.get('api_aggregator', {}).get('status', 'Unknown')}</span>
+            </div>
+            <div class="item">
+                <strong>Total Matches:</strong> {debug_data.get('api_aggregator', {}).get('total_matches', 0)}
+            </div>
+            {f"<div class='item'><strong>Matches by League:</strong><pre>{json.dumps(debug_data.get('api_aggregator', {}).get('matches_by_league', {{}}), indent=2)}</pre></div>" if debug_data.get('api_aggregator', {}).get('matches_by_league') else ""}
+            {f"<div class='item error-box'><strong>Error:</strong><pre>{debug_data.get('api_aggregator', {}).get('error')}</pre></div>" if debug_data.get('api_aggregator', {}).get('error') else ""}
+        </div>
+        
+        <div class="section">
+            <h2>📝 Manual Matches</h2>
+            <div class="item">
+                <strong>Status:</strong> <span class="{('status-ok' if '✅' in debug_data['manual_matches'].get('status', '') else 'status-warning')}">{debug_data['manual_matches'].get('status', 'Unknown')}</span>
+            </div>
+            <div class="item">
+                <strong>File Path:</strong> {debug_data['manual_matches'].get('file_path', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Total Matches:</strong> {debug_data['manual_matches'].get('total_matches', 0)}
+            </div>
+            {f"<div class='item'><strong>Matches:</strong><pre>{json.dumps(debug_data['manual_matches'].get('matches', []), indent=2)}</pre></div>" if debug_data['manual_matches'].get('matches') else ""}
+        </div>
+        
+        <div class="section">
+            <h2>👥 Assignments</h2>
+            <div class="item">
+                <strong>Status:</strong> <span class="{('status-ok' if '✅' in debug_data['assignments'].get('status', '') else 'status-warning')}">{debug_data['assignments'].get('status', 'Unknown')}</span>
+            </div>
+            <div class="item">
+                <strong>File Path:</strong> {debug_data['assignments'].get('file_path', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Total Assignments:</strong> {debug_data['assignments'].get('total_assignments', 0)}
+            </div>
+            {f"<div class='item'><strong>Assignments:</strong><pre>{json.dumps(debug_data['assignments'].get('assignments', {{}}), indent=2)}</pre></div>" if debug_data['assignments'].get('assignments') else ""}
+        </div>
+        
+        <div class="section">
+            <h2>💻 System Info</h2>
+            <div class="item">
+                <strong>Python Version:</strong> {debug_data['system'].get('python_version', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Platform:</strong> {debug_data['system'].get('platform', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Working Directory:</strong> {debug_data['system'].get('cwd', 'N/A')}
+            </div>
+            <div class="item">
+                <strong>Environment Variables:</strong>
+                <pre>{json.dumps(debug_data['system'].get('env_vars', {{}}), indent=2)}</pre>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📄 Full Debug Data (JSON)</h2>
+            <pre>{json.dumps(debug_data, indent=2)}</pre>
+        </div>
+        
+        <div style="text-align: center; padding: 30px; color: #888;">
+            <p>Debug dashboard generated at {debug_data["timestamp"]}</p>
+            <p>BTTS App {debug_data["version"]}</p>
         </div>
     </body>
     </html>
