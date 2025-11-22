@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.3.3-bbc-aggressive"
+APP_VERSION = "v2.3.4-enhanced-debug"
 import requests
 from typing import Dict, List, Optional
 
@@ -1112,6 +1112,83 @@ def debug_bbc():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+@app.route("/debug/bbc/detailed")
+def debug_bbc_detailed():
+    """
+    Enhanced debug endpoint that shows exactly what the BBC scraper finds.
+    Usage: /debug/bbc/detailed?league=sco.4
+    """
+    league = request.args.get('league', 'sco.4')
+    
+    from bbc_scraper import scrape_bbc_fixtures_debug
+    result = scrape_bbc_fixtures_debug(league)
+    
+    # Format nicely for browser viewing
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>BBC Scraper Debug - Enhanced</title>
+        <style>
+            body {{ font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }}
+            .section {{ margin: 20px 0; padding: 15px; background: #2a2a2a; border: 1px solid #00ff00; }}
+            .error {{ color: #ff4444; }}
+            .success {{ color: #44ff44; }}
+            .info {{ color: #4444ff; }}
+            pre {{ white-space: pre-wrap; word-wrap: break-word; }}
+            h2 {{ color: #00ffff; }}
+            .fixture {{ padding: 5px; margin: 5px 0; background: #3a3a3a; }}
+        </style>
+    </head>
+    <body>
+        <h1>🔍 BBC Scraper Enhanced Debug</h1>
+        <p>League: <strong>{league}</strong></p>
+        
+        <div class="section">
+            <h2>Summary</h2>
+            <p>Status: <span class="{'success' if result.get('fixtures') else 'error'}">
+                {len(result.get('fixtures', []))} fixtures found
+            </span></p>
+            <p>Total Links: {result.get('debug', {}).get('total_links', 0)}</p>
+            <p>Links with ' v ': {len(result.get('debug', {}).get('links_with_v', []))}</p>
+            <p>Links with 'vs': {len(result.get('debug', {}).get('links_with_vs', []))}</p>
+        </div>
+        
+        <div class="section">
+            <h2>Fixtures Found by Scraper</h2>
+            {'<p class="error">No fixtures found!</p>' if not result.get('fixtures') else ''}
+            {''.join([f'<div class="fixture">✅ {f["home_team"]} v {f["away_team"]} - {f["kickoff_time"]}</div>' for f in result.get('fixtures', [])])}
+        </div>
+        
+        <div class="section">
+            <h2>Links with " v " Pattern</h2>
+            {'<p class="error">No links found with " v " pattern</p>' if not result.get('debug', {}).get('links_with_v') else ''}
+            {''.join([f'<div class="fixture">🔗 {link["text"]}<br><small>{link["href"]}</small></div>' for link in result.get('debug', {}).get('links_with_v', [])[:10]])}
+            {f'<p>... and {len(result.get("debug", {}).get("links_with_v", [])) - 10} more</p>' if len(result.get('debug', {}).get('links_with_v', [])) > 10 else ''}
+        </div>
+        
+        <div class="section">
+            <h2>Sample Link Texts from Page</h2>
+            {''.join([f'<div class="fixture">📄 {link["text"][:100]}</div>' for link in result.get('debug', {}).get('sample_link_texts', [])[:20]])}
+        </div>
+        
+        <div class="section">
+            <h2>Raw JSON</h2>
+            <pre>{json.dumps(result, indent=2)}</pre>
+        </div>
+        
+        <div class="section">
+            <h2>Errors</h2>
+            <p class="{'error' if result.get('error') else 'success'}">
+                {result.get('error', 'No errors')}
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
 
 
 @app.route("/admin")
