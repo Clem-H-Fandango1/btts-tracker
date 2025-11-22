@@ -1,247 +1,115 @@
 """
-BBC Sport Scraper for Scottish Football Matches
-Scrapes live scores and fixtures from BBC Sport
+BBC Sport scraper for Scottish football fixtures.
+Uses robust text pattern matching to find fixtures on BBC Sport pages.
 """
+
 import requests
 from bs4 import BeautifulSoup
-from typing import List, Dict, Optional
-import re
 from datetime import datetime
 
 
-# BBC Sport Scottish football URLs
-BBC_SCOTTISH_LEAGUES = {
-    "sco.1": "https://www.bbc.com/sport/football/scottish-premiership/scores-fixtures",
-    "sco.2": "https://www.bbc.com/sport/football/scottish-championship/scores-fixtures", 
-    "sco.3": "https://www.bbc.com/sport/football/scottish-league-one/scores-fixtures",
-    "sco.4": "https://www.bbc.com/sport/football/scottish-league-two/scores-fixtures",
-}
-
-
-def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
+def scrape_bbc_fixtures(league_code):
     """
-    Scrape matches from BBC Sport for a given league.
+    Scrape BBC Sport fixtures for Scottish leagues using robust text pattern matching.
     
     Args:
-        league_code: League code (e.g. "sco.4" for Scottish League Two)
-        date_str: Date string in YYYYMMDD format (not used currently as BBC shows all upcoming)
+        league_code: ESPN league code (e.g., 'sco.4' for Scottish League Two)
     
     Returns:
-        List of match dictionaries with: eventId, homeTeam, awayTeam, 
-        homeScore, awayScore, status, league
+        List of fixture dictionaries with home_team, away_team, kickoff_time
     """
-    if league_code not in BBC_SCOTTISH_LEAGUES:
-        return []
+    # Map ESPN league codes to BBC URLs
+    league_url_map = {
+        'sco.4': 'https://www.bbc.com/sport/football/scottish-league-two/scores-fixtures',
+        'sco.3': 'https://www.bbc.com/sport/football/scottish-league-one/scores-fixtures',
+        'sco.2': 'https://www.bbc.com/sport/football/scottish-championship/scores-fixtures',
+        'sco.1': 'https://www.bbc.com/sport/football/scottish-premiership/scores-fixtures'
+    }
     
-    url = BBC_SCOTTISH_LEAGUES[league_code]
-    matches = []
+    url = league_url_map.get(league_code)
+    if not url:
+        return []
     
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        resp = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
         
-        if resp.status_code != 200:
-            print(f"BBC scrape failed for {league_code}: HTTP {resp.status_code}")
-            return []
+        soup = BeautifulSoup(response.text, 'html.parser')
+        fixtures = []
+        seen_fixtures = set()
         
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        # Strategy: Find all links that contain " v " (BBC's format for fixtures)
+        # These are typically in <a> tags with fixture URLs
+        all_links = soup.find_all('a', href=True)
         
-        # Debug: Save a snippet of the HTML to see structure
-        print(f"BBC page title: {soup.title.string if soup.title else 'No title'}")
-        print(f"BBC page has {len(soup.find_all())} total HTML elements")
+        for link in all_links:
+            link_text = link.get_text(strip=True)
+            href = link.get('href', '')
+            
+            # BBC fixture links contain team names separated by " v "
+            if ' v ' in link_text and '/football/' in href:
+                try:
+                    # Split on " v " to get team names
+                    teams = link_text.split(' v ')
+                    if len(teams) == 2:
+                        home_team = teams[0].strip()
+                        away_team = teams[1].strip()
+                        
+                        # Skip if team names are too short or look invalid
+                        if len(home_team) < 3 or len(away_team) < 3:
+                            continue
+                        
+                        # Skip if it contains numbers (likely a score, not a fixture)
+                        if any(char.isdigit() for char in home_team) or any(char.isdigit() for char in away_team):
+                            continue
+                        
+                        # Try to find kickoff time near this fixture
+                        kickoff_time = "TBD"
+                        
+                        # Look for time element in parent or nearby elements
+                        parent = link.parent
+                        for _ in range(3):  # Check up to 3 levels up
+                            if parent:
+                                time_elem = parent.find('time')
+                                if time_elem:
+                                    time_text = time_elem.get_text(strip=True)
+                                    if time_text:
+                                        kickoff_time = time_text
+                                        break
+                                parent = parent.parent
+                        
+                        # Create unique key to avoid duplicates
+                        fixture_key = f"{home_team}|{away_team}"
+                        if fixture_key not in seen_fixtures:
+                            seen_fixtures.add(fixture_key)
+                            fixtures.append({
+                                'home_team': home_team,
+                                'away_team': away_team,
+                                'kickoff_time': kickoff_time,
+                                'league_code': league_code
+                            })
+                except Exception as e:
+                    continue
         
-        # BBC uses multiple possible structures - try all of them
-        match_elements = []
-        
-        # Try method 1: Look for MatchProgressContainer (what the debug found!)
-        match_elements = soup.find_all(class_=lambda x: x and 'MatchProgressContainer' in str(x))
-        print(f"Method 1 (MatchProgressContainer): Found {len(match_elements)} elements")
-        
-        if not match_elements:
-            # Try method 2: Look for elements containing match/fixture/event
-            match_elements = soup.find_all(class_=lambda x: x and any(word in str(x).lower() for word in ['match', 'fixture', 'event']))
-            print(f"Method 2 (generic match/fixture): Found {len(match_elements)} elements")
-        
-        if not match_elements:
-            # Try method 3: article tags
-            match_elements = soup.find_all('article')
-            print(f"Method 3 (article tags): Found {len(match_elements)} elements")
-        
-        if not match_elements:
-            # Try method 4: div with data-testid
-            match_elements = soup.find_all(attrs={'data-testid': lambda x: x and 'match' in str(x).lower()})
-            print(f"Method 4 (data-testid): Found {len(match_elements)} elements")
-        
-        if not match_elements:
-            # Try method 5: Look for any element containing "vs" or "v" between text
-            all_divs = soup.find_all(['div', 'li', 'article'])
-            for div in all_divs:
-                text = div.get_text(separator=' ', strip=True)
-                if re.search(r'\w+\s+v\s+\w+', text, re.I):
-                    match_elements.append(div)
-            print(f"Method 5 (text pattern matching): Found {len(match_elements)} elements")
-        
-        print(f"BBC scraper found {len(match_elements)} potential match elements for {league_code}")
-        
-        for match_elem in match_elements:
-            try:
-                match_data = parse_bbc_match_element(match_elem, league_code)
-                if match_data:
-                    matches.append(match_data)
-            except Exception as e:
-                print(f"Error parsing match element: {e}")
-                continue
-        
-        print(f"BBC scraper successfully parsed {len(matches)} matches for {league_code}")
+        print(f"BBC Scraper: Found {len(fixtures)} fixtures for {league_code}")
+        return fixtures
         
     except Exception as e:
-        print(f"BBC scrape error for {league_code}: {e}")
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
-    
-    return matches
+        print(f"Error scraping BBC fixtures for {league_code}: {e}")
+        return []
 
 
-def parse_bbc_match_element(elem, league_code: str) -> Optional[Dict]:
-    """Parse a single BBC match element into match data."""
-    try:
-        # Get ALL text from this element
-        full_text = elem.get_text(separator='|', strip=True)
-        
-        # BBC often has team names as separate text nodes
-        # Look for pattern: "TeamName | v | TeamName" or similar
-        import re
-        
-        home_team = None
-        away_team = None
-        home_score = 0
-        away_score = 0
-        status = "Scheduled"
-        
-        # Try to find "Team A v Team B" pattern in the text
-        # Pattern 1: "Team A v Team B" (most common)
-        vs_pattern = re.search(r'([A-Z][A-Za-z\s&\'-]+?)\s+v\s+([A-Z][A-Za-z\s&\'-]+?)(?:\||$|\d|FT|HT)', full_text)
-        if vs_pattern:
-            home_team = vs_pattern.group(1).strip()
-            away_team = vs_pattern.group(2).strip()
-        
-        # If that didn't work, try finding abbr tags (BBC uses these for team names)
-        if not home_team:
-            abbr_tags = elem.find_all('abbr')
-            if len(abbr_tags) >= 2:
-                home_team = abbr_tags[0].get('title') or abbr_tags[0].get_text(strip=True)
-                away_team = abbr_tags[1].get('title') or abbr_tags[1].get_text(strip=True)
-        
-        # If still nothing, try finding any two capitalized words separated by 'v'
-        if not home_team:
-            # Split by | and look for segments with v
-            segments = full_text.split('|')
-            for i, seg in enumerate(segments):
-                if ' v ' in seg.lower() and len(seg) < 100:  # Likely a match line
-                    parts = re.split(r'\s+v\s+', seg, flags=re.I)
-                    if len(parts) == 2:
-                        home_team = parts[0].strip()
-                        away_team = parts[1].strip()
-                        break
-        
-        if not home_team or not away_team:
-            return None
-        
-        # Clean up team names (remove numbers, scores that might have leaked in)
-        home_team = re.sub(r'\d+[\'"]?$', '', home_team).strip()
-        away_team = re.sub(r'^\d+[\'"]?\s*', '', away_team).strip()
-        
-        # Extract scores - look for numbers near team names
-        score_pattern = re.search(r'(\d+)\s*-\s*(\d+)', full_text)
-        if score_pattern:
-            home_score = int(score_pattern.group(1))
-            away_score = int(score_pattern.group(2))
-            status = "In Progress"
-        
-        # Look for status indicators in the text
-        if 'FT' in full_text or 'Full time' in full_text:
-            status = "FT"
-        elif 'HT' in full_text or 'Half time' in full_text:
-            status = "HT"
-        elif re.search(r'\d+[\'"]', full_text):  # Look for minute markers like "45'"
-            minute_match = re.search(r'(\d+)[\'"]', full_text)
-            if minute_match:
-                status = f"{minute_match.group(1)}'"
-        elif 'Postponed' in full_text:
-            status = "Postponed"
-        
-        # Generate event ID
-        event_id = f"bbc_{league_code}_{home_team.replace(' ', '_')}_{away_team.replace(' ', '_')}"
-        
-        print(f"Parsed: {home_team} vs {away_team} ({status})")
-        
-        return {
-            "eventId": event_id,
-            "source": "BBC",
-            "league": league_code,
-            "homeTeam": home_team,
-            "awayTeam": away_team,
-            "homeScore": home_score,
-            "awayScore": away_score,
-            "status": status,
-            "title": f"{home_team} vs {away_team}",
-        }
-        
-    except Exception as e:
-        print(f"Error parsing BBC match: {e}")
-        import traceback
-        print(traceback.format_exc())
-        return None
-
-
-def get_bbc_live_score(home_team: str, away_team: str, league_code: str) -> Optional[Dict]:
-    """
-    Get live score for a specific match by team names.
-    
-    Args:
-        home_team: Home team name
-        away_team: Away team name
-        league_code: League code
-    
-    Returns:
-        Match data dict or None if not found
-    """
-    matches = scrape_bbc_matches(league_code)
-    
-    # Normalize team names for matching
-    home_norm = home_team.lower().strip()
-    away_norm = away_team.lower().strip()
-    
-    for match in matches:
-        match_home = match["homeTeam"].lower().strip()
-        match_away = match["awayTeam"].lower().strip()
-        
-        if home_norm in match_home and away_norm in match_away:
-            return match
-    
-    return None
-
-
-def scrape_all_scottish_matches() -> List[Dict]:
-    """Scrape all Scottish league matches from BBC Sport."""
-    all_matches = []
-    
-    for league_code in BBC_SCOTTISH_LEAGUES.keys():
-        matches = scrape_bbc_matches(league_code)
-        all_matches.extend(matches)
-    
-    return all_matches
-
-
-# Test function
 if __name__ == "__main__":
-    print("Testing BBC Sport scraper...")
-    print("\nScottish League Two matches:")
-    matches = scrape_bbc_matches("sco.4")
-    for match in matches:
-        print(f"  {match['homeTeam']} vs {match['awayTeam']}")
-        print(f"    Score: {match['homeScore']}-{match['awayScore']}")
-        print(f"    Status: {match['status']}")
-        print()
+    # Test the scraper
+    print("Testing BBC Scraper for Scottish League Two...")
+    fixtures = scrape_bbc_fixtures('sco.4')
+    
+    if fixtures:
+        print(f"\nFound {len(fixtures)} fixtures:")
+        for i, fixture in enumerate(fixtures, 1):
+            print(f"{i}. {fixture['home_team']} v {fixture['away_team']} - {fixture['kickoff_time']}")
+    else:
+        print("No fixtures found")
