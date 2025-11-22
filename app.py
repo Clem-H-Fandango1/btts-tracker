@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.1.3-dev-rc"
+APP_VERSION = "v2.2.0-multi-api"
 import requests
 from typing import Dict, List, Optional
 
