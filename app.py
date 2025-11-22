@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.2.0-multi-api"
+APP_VERSION = "v2.3.0-bbc-scraper"
 import requests
 from typing import Dict, List, Optional
 
@@ -60,6 +60,11 @@ GROUPS_FILE = os.path.join(os.path.dirname(__file__), "groups.json")
 # Location of the site settings file.  This JSON file stores global
 # settings such as the site title and the "any other business" message.
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+# Location of the manual matches file.  This JSON file stores matches that
+# have been manually added (typically because they don't appear in API feeds).
+# Each entry contains: eventId, homeTeam, awayTeam, league, kickoffTime.
+MANUAL_MATCHES_FILE = os.path.join(os.path.dirname(__file__), "manual_matches.json")
 
 # List of ESPN league codes for UK competitions.  These correspond to
 # the top four tiers of English football and the top four Scottish
@@ -321,6 +326,85 @@ def save_settings(settings: Dict[str, str]) -> None:
     with open(SETTINGS_FILE, "w") as f:
         json.dump(to_save, f)
 
+
+def load_manual_matches() -> List[dict]:
+    """Load manually added matches from disk.
+    
+    Returns a list of match dictionaries with keys: eventId, homeTeam,
+    awayTeam, league, kickoffTime, title, status.
+    """
+    try:
+        with open(MANUAL_MATCHES_FILE, "r") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def save_manual_matches(matches: List[dict]) -> None:
+    """Persist manually added matches to disk."""
+    try:
+        with open(MANUAL_MATCHES_FILE, "w") as f:
+            json.dump(matches, f, indent=2)
+    except Exception as e:
+        print(f"Error saving manual matches: {e}")
+
+
+def add_manual_match(home_team: str, away_team: str, league: str, kickoff_time: str) -> str:
+    """Add a new manual match and return its generated event ID.
+    
+    Args:
+        home_team: Home team name
+        away_team: Away team name  
+        league: League code (e.g. "sco.4")
+        kickoff_time: Kickoff time string (e.g. "Sat, November 22 at 3:00 PM UK")
+        
+    Returns:
+        The generated event ID for this match
+    """
+    matches = load_manual_matches()
+    
+    # Generate a unique manual event ID
+    import time
+    event_id = f"manual_{int(time.time())}"
+    
+    new_match = {
+        "eventId": event_id,
+        "homeTeam": home_team,
+        "awayTeam": away_team,
+        "league": league,
+        "kickoffTime": kickoff_time,
+        "title": f"{home_team} vs {away_team}",
+        "status": kickoff_time,
+        "source": "manual"
+    }
+    
+    matches.append(new_match)
+    save_manual_matches(matches)
+    
+    # Add to event league map
+    event_league_map[event_id] = league
+    
+    return event_id
+
+
+def remove_manual_match(event_id: str) -> bool:
+    """Remove a manual match by its event ID.
+    
+    Returns True if match was found and removed, False otherwise.
+    """
+    matches = load_manual_matches()
+    original_len = len(matches)
+    matches = [m for m in matches if m.get("eventId") != event_id]
+    
+    if len(matches) < original_len:
+        save_manual_matches(matches)
+        return True
+    return False
+
+
 # In-memory cache mapping event IDs to their corresponding league code.
 # This allows the API to look up the correct league when retrieving
 # detailed information for a specific match.
@@ -563,6 +647,10 @@ def api_matches():
             if scoreboard:
                 events = parse_events_from_scoreboard(scoreboard, league)
                 all_events.extend(events)
+    
+    # Add manually entered matches
+    manual_matches = load_manual_matches()
+    all_events.extend(manual_matches)
     
     # Sort events by title for better user experience
     all_events.sort(key=lambda e: e["title"])
@@ -910,6 +998,58 @@ def api_search_matches():
     return jsonify(sorted_events)
 
 
+@app.route("/api/manual_matches", methods=["GET"])
+def get_manual_matches():
+    """Return list of all manually added matches."""
+    matches = load_manual_matches()
+    return jsonify(matches)
+
+
+@app.route("/api/manual_matches", methods=["POST"])
+def create_manual_match():
+    """Add a new manual match.
+    
+    Expected JSON body:
+    {
+        "homeTeam": "Stirling Albion",
+        "awayTeam": "Elgin City",
+        "league": "sco.4",
+        "kickoffTime": "Sat, November 22 at 3:00 PM UK"
+    }
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({"success": False, "message": "No data provided"}), 400
+    
+    home_team = data.get("homeTeam", "").strip()
+    away_team = data.get("awayTeam", "").strip()
+    league = data.get("league", "sco.4").strip()
+    kickoff_time = data.get("kickoffTime", "TBD").strip()
+    
+    if not home_team or not away_team:
+        return jsonify({"success": False, "message": "Home and away teams are required"}), 400
+    
+    event_id = add_manual_match(home_team, away_team, league, kickoff_time)
+    
+    return jsonify({
+        "success": True,
+        "message": "Manual match added successfully",
+        "eventId": event_id
+    })
+
+
+@app.route("/api/manual_matches/<event_id>", methods=["DELETE"])
+def delete_manual_match(event_id):
+    """Delete a manual match by its event ID."""
+    success = remove_manual_match(event_id)
+    
+    if success:
+        return jsonify({"success": True, "message": "Match deleted"})
+    else:
+        return jsonify({"success": False, "message": "Match not found"}), 404
+
+
 @app.route("/admin")
 def admin_page():
     return render_template("admin.html", app_version=APP_VERSION)
@@ -1112,6 +1252,10 @@ def save_notify_state(state):
         pass
 
 def get_match_info_for_event(event_id: str):
+    # Check if this is a BBC or manual match
+    if event_id.startswith("bbc_") or event_id.startswith("manual_"):
+        return get_match_info_from_bbc(event_id)
+    
     league = event_league_map.get(event_id)
     data = None
     leagues_to_try = [league] if league else LEAGUE_CODES
@@ -1176,6 +1320,95 @@ def get_match_info_for_event(event_id: str):
         "status": status_detail, "state": state,
         "kickoffTime": kickoff_time, "btts": btts
     }
+
+
+def get_match_info_from_bbc(event_id: str):
+    """Get live match info from BBC scraper for manual/BBC matches."""
+    try:
+        from bbc_scraper import get_bbc_live_score
+        
+        # Get match details from manual matches or parse from event_id
+        manual_matches = load_manual_matches()
+        match_info = None
+        
+        # Find the match in manual matches
+        for match in manual_matches:
+            if match.get("eventId") == event_id:
+                match_info = match
+                break
+        
+        if not match_info and event_id.startswith("bbc_"):
+            # Parse event ID: bbc_sco.4_Stirling_Albion_Elgin_City
+            parts = event_id.split("_")
+            if len(parts) >= 3:
+                league = parts[1]
+                # Reconstruct team names
+                home_team = " ".join(parts[2:-1])  # Everything between league and last part
+                away_team = parts[-1].replace("_", " ")
+                match_info = {
+                    "homeTeam": home_team,
+                    "awayTeam": away_team,
+                    "league": league
+                }
+        
+        if not match_info:
+            return None
+        
+        # Scrape BBC for live score
+        bbc_data = get_bbc_live_score(
+            match_info.get("homeTeam", ""),
+            match_info.get("awayTeam", ""),
+            match_info.get("league", "")
+        )
+        
+        if not bbc_data:
+            # Return match info without scores
+            return {
+                "eventId": event_id,
+                "league": match_info.get("league", ""),
+                "homeTeam": match_info.get("homeTeam", ""),
+                "awayTeam": match_info.get("awayTeam", ""),
+                "homeScore": 0,
+                "awayScore": 0,
+                "homeRedCards": 0,
+                "awayRedCards": 0,
+                "status": match_info.get("status", "Scheduled"),
+                "state": "pre",
+                "kickoffTime": match_info.get("kickoffTime", ""),
+                "btts": False
+            }
+        
+        # Map BBC status to ESPN-style state
+        status = bbc_data.get("status", "Scheduled")
+        if status == "FT":
+            state = "post"
+        elif status in ["HT", "In Progress"] or any(c.isdigit() for c in status):
+            state = "in"
+        else:
+            state = "pre"
+        
+        home_score = bbc_data.get("homeScore", 0)
+        away_score = bbc_data.get("awayScore", 0)
+        btts = home_score > 0 and away_score > 0
+        
+        return {
+            "eventId": event_id,
+            "league": bbc_data.get("league", ""),
+            "homeTeam": bbc_data.get("homeTeam", ""),
+            "awayTeam": bbc_data.get("awayTeam", ""),
+            "homeScore": home_score,
+            "awayScore": away_score,
+            "homeRedCards": 0,  # BBC doesn't show red cards easily
+            "awayRedCards": 0,
+            "status": status,
+            "state": state,
+            "kickoffTime": "",
+            "btts": btts
+        }
+        
+    except Exception as e:
+        print(f"BBC scraper error for {event_id}: {e}")
+        return None
 
 def format_minute(status_detail: str):
     if not status_detail: return ""

@@ -1,11 +1,20 @@
 """
 Multi-API Aggregator for Football Match Data
-Combines data from ESPN, TheSportsDB, and Football-Data.org
+Combines data from ESPN, TheSportsDB, Football-Data.org, and BBC Sport
 """
 import requests
 from typing import List, Dict, Optional
 import datetime
 import os
+
+
+# Import BBC scraper
+try:
+    from bbc_scraper import scrape_bbc_matches
+    BBC_AVAILABLE = True
+except ImportError:
+    BBC_AVAILABLE = False
+    print("BBC scraper not available")
 
 
 # API Configuration
@@ -216,6 +225,15 @@ def fetch_all_matches(league_code: str, date_str: str) -> List[Dict]:
     all_matches.extend(fetch_from_espn(league_code, date_str))
     all_matches.extend(fetch_from_thesportsdb(league_code, date_str))
     all_matches.extend(fetch_from_footballdata(league_code, date_str))
+    
+    # Add BBC Sport scraping for Scottish leagues (best source for these)
+    if BBC_AVAILABLE and league_code.startswith("sco"):
+        try:
+            bbc_matches = scrape_bbc_matches(league_code, date_str)
+            all_matches.extend(bbc_matches)
+            print(f"BBC scraper added {len(bbc_matches)} matches for {league_code}")
+        except Exception as e:
+            print(f"BBC scraper failed for {league_code}: {e}")
     
     # Deduplicate
     unique_matches = deduplicate_matches(all_matches)
