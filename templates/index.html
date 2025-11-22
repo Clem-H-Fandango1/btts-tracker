@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTTS Match Tracker</title>
+  <!--
+    Add a version query string to the stylesheet link to bust browser caches.
+    This ensures that when new styles are deployed, clients will load the
+    updated CSS instead of using a cached copy.
+  -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=v9">
+</head>
+<body>
+  <div class="container">
+<!-- Site title.  The text will be updated dynamically based on settings -->
+    <h1 id="app-title">BTTS Match Tracker</h1>
+    <div id="message-hero" class="message-hero" style="display:none; font-size:1.4em; max-width:90%; margin: 0 auto; text-align:center;"></div>
+    <div id="top-section" class="group-section">
+      <h2>Top Bet</h2>
+      <!-- Container for top bet cards; responsive grid layout -->
+      <div id="top-cards" class="cards-container"></div>
+    </div>
+    <div id="bottom-section" class="group-section">
+      <h2>Bottom Bet</h2>
+      <!-- Container for bottom bet cards; responsive grid layout -->
+      <div id="bottom-cards" class="cards-container"></div>
+    </div>
+    <!-- Section for Sixer Bet (hidden by default).  This is used when a sixer
+         bet is selected on the admin page. -->
+    <div id="sixer-section" class="group-section" style="display:none;">
+      <h2>Sixer Bet</h2>
+      <div id="sixer-cards" class="cards-container"></div>
+    </div>
+  </div>
+  <!--
+    Append a version query string to the viewer script to bust caches when the
+    script is updated.  Without this, browsers may serve an older cached
+    version of viewer.js that still contains "No match assigned".
+  -->
+  <script src="{{ url_for('static', filename='js/viewer.js') }}?v=v9"></script>
+</body>
+</html>

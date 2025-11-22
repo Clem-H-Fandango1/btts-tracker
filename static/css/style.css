@@ -1,0 +1,375 @@
+/*
+ * Global stylesheet inspired by Bet365's colour palette. The design uses dark greens
+ * and bright yellow accents to create a casino-like feel, while retaining clear
+ * readability on both desktop and mobile. The primary colours are drawn from
+ * Bet365's official colour codes: green (#027B5B) and yellow (#F9DC1C)【773995603606220†L18-L35】.
+ */
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #0b2e13; /* deep green background for the whole page */
+  color: #f5f5f5; /* light text for contrast */
+}
+
+/* Container to centre content and set a maximum width */
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Primary heading styles */
+h1 {
+  text-align: center;
+  color: #F9DC1C; /* Bet365 yellow for the main heading */
+  margin-bottom: 20px;
+}
+
+/* Secondary heading styles */
+h2 {
+  color: #F9DC1C;
+  margin-top: 0;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+/* Generic flex row for selectors and assignment rows */
+.match-selector,
+.assign-row {
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Style labels (participant names) */
+.match-selector label,
+.assign-row label {
+  min-width: 80px;
+  font-weight: bold;
+  color: #F9DC1C;
+}
+
+/* Score card styling */
+.score-card {
+  border: 1px solid #027B5B; /* Bet365 green border */
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #023f2b; /* dark green card background */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+/* Highlight entire card when both teams have scored */
+.score-card.btts-hit {
+  /* Brighter card highlight when both teams have scored */
+  background-color: #0c6b3a;
+  border-color: #22c55e;
+}
+
+.score-card h3 {
+  margin: 0 0 5px 0;
+  font-size: 1.3em;
+  color: #F9DC1C;
+}
+
+.score-card .score {
+  font-size: 1.6em;
+  font-weight: bold;
+  color: #F9DC1C;
+}
+
+.score-card span {
+  font-size: 1em;
+  color: #e0e0e0;
+}
+
+/* Select elements */
+select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #027B5B;
+  border-radius: 4px;
+  font-size: 1em;
+  background-color: #014d38;
+  color: #ffffff;
+}
+
+/* Responsive cards container using CSS grid.  Cards automatically wrap and
+   resize based on the available space. Each card has a minimum width and
+   grows to fill the row. */
+.cards-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 15px;
+}
+
+/* Hover effect on cards for subtle feedback */
+.score-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Group section styles for top and bottom bets */
+.group-section {
+  margin-bottom: 30px;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #027B5B;
+  background-color: #023f2b;
+}
+
+/* Center the group headings (Top Bet, Bottom Bet) */
+.group-section h2 {
+  text-align: center;
+}
+
+/* Friend name box displayed at the top of each score card */
+.friend-box {
+  background-color: #014d38;
+  color: #F9DC1C;
+  font-weight: bold;
+  font-size: 1.2em;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  width: 100%;
+  text-align: center;
+}
+
+/* Container for match information rows */
+.match-info {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* Each row displays team name and corresponding score */
+.match-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.match-row .team-name {
+  flex: 3;
+  text-align: left;
+  color: #F9DC1C;
+  font-weight: bold;
+  font-size: 1.3em;
+}
+
+.match-row .team-score {
+  flex: 1;
+  text-align: right;
+  color: #F9DC1C;
+  font-weight: bold;
+  font-size: 1.3em;
+}
+
+/* Different background colours for top and bottom sections */
+#top-section {
+  background-color: #013e2e;
+}
+#bottom-section {
+  background-color: #012d22;
+}
+
+/* Sixer section uses the same styling as other group sections */
+#sixer-section {
+  background-color: #012d22;
+}
+
+/* Message bar under the cards.  Displays any personal messages set by admin. */
+.message-bar {
+  margin-top: 20px;
+  padding: 10px;
+  color: #F9DC1C;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+/* Table styling for BTTS predictions page */
+.pred-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+.pred-table th, .pred-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #027B5B;
+}
+.pred-table th {
+  background-color: #014d38;
+  color: #F9DC1C;
+}
+.pred-table td {
+  background-color: #023f2b;
+  color: #e0e0e0;
+}
+
+/* Style textarea fields similarly to inputs */
+textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #027B5B;
+  border-radius: 4px;
+  background-color: #014d38;
+  color: #ffffff;
+  resize: vertical;
+}
+
+/* Styling for buttons */
+.button-row button {
+  background-color: #027B5B;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 20px;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.button-row button:hover {
+  background-color: #02543f;
+}
+
+/* Center align buttons within their row */
+.button-row {
+  text-align: center;
+}
+
+/* Additional containers used in the admin page */
+.login-container,
+.admin-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #027B5B;
+  background-color: #013e2e;
+}
+
+.login-container h2,
+.admin-container h2 {
+  color: #F9DC1C;
+}
+
+.form-row label,
+.assignments .assign-row label {
+  color: #F9DC1C;
+}
+
+.form-row input,
+.form-row select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #027B5B;
+  border-radius: 4px;
+  background-color: #014d38;
+  color: #ffffff;
+}
+
+.assignments {
+  margin-top: 20px;
+}
+
+/* Responsive typography adjustments for small screens */
+@media (max-width: 600px) {
+  h1 {
+    font-size: 1.4em;
+  }
+  h2 {
+    font-size: 1.2em;
+  }
+  .score-card h3 {
+    font-size: 1.1em;
+  }
+  .score-card span {
+    font-size: 0.95em;
+  }
+  .button-row button {
+    width: 100%;
+    margin-top: 10px;
+  }
+}
+
+
+.message-hero {
+  display: block;
+  text-align: center;
+  font-size: 1.6em;        /* larger headline */
+  font-weight: 800;
+  color: #F9DC1C;          /* Bet365 yellow */
+  background-color: #014d38;
+  padding: 12px 16px;
+  margin: 8px auto 16px auto;
+  max-width: 640px;        /* prevents edge-to-edge on phones */
+  border: 1px solid #027B5B;
+  border-radius: 8px;
+  word-wrap: break-word;
+}
+
+
+@media (max-width: 480px){
+  .message-hero { font-size: 1.3em; padding: 10px 12px; max-width: 92vw; }
+}
+
+
+/* === v1.0.1: clearer BTTS visuals, green tick persists === */
+.score-card.btts-hit {
+  /* Brighter highlight when both teams have scored */
+  background-color: #0c6b3a;
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.45);
+}
+.score-card .btts {
+  /* Display a large green tick without the pill styling */
+  font-size: 2rem;
+  font-weight: bold;
+  color: #22c55e;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-top: 4px;
+}
+/* Keep the badge green after BTTS hits */
+.score-card.btts-hit .btts {
+  /* Keep the tick colour consistent on hit */
+  color: #22c55e;
+  background: transparent;
+  border: none;
+}
+@keyframes btts-pop {
+  0%   { transform: scale(0.9); }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.score-card.btts-just-hit { animation: btts-pop 800ms ease-out; }
+
+
+/* Version under Admin H1 */
+.version-subtitle{
+  margin: 6px 0 14px 0;
+  text-align: center;
+  font-size: 0.95em;
+  font-weight: 800;
+  color: #F9DC1C; /* bright yellow */
+}
+
+
+/* Red card badge */
+.red-cards { margin-left: 6px; font-weight: 700; }
