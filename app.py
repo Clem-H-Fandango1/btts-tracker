@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.3.1-bbc-debug"
+APP_VERSION = "v2.3.2-bbc-fixed"
 import requests
 from typing import Dict, List, Optional
 

@@ -55,26 +55,33 @@ def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
         # BBC uses multiple possible structures - try all of them
         match_elements = []
         
-        # Try method 1: article tags with fixture classes
-        match_elements = soup.find_all('article', class_=re.compile('(fixture|event|match)', re.I))
+        # Try method 1: Look for MatchProgressContainer (what the debug found!)
+        match_elements = soup.find_all(class_=lambda x: x and 'MatchProgressContainer' in str(x))
+        print(f"Method 1 (MatchProgressContainer): Found {len(match_elements)} elements")
         
         if not match_elements:
-            # Try method 2: div tags with fixture/match classes  
-            match_elements = soup.find_all('div', class_=re.compile('(fixture|event|match)', re.I))
+            # Try method 2: Look for elements containing match/fixture/event
+            match_elements = soup.find_all(class_=lambda x: x and any(word in str(x).lower() for word in ['match', 'fixture', 'event']))
+            print(f"Method 2 (generic match/fixture): Found {len(match_elements)} elements")
         
         if not match_elements:
-            # Try method 3: li elements (sometimes used in lists)
-            match_elements = soup.find_all('li', class_=re.compile('(fixture|event|match)', re.I))
+            # Try method 3: article tags
+            match_elements = soup.find_all('article')
+            print(f"Method 3 (article tags): Found {len(match_elements)} elements")
         
         if not match_elements:
-            # Try method 4: Look for any element with team names in data attributes
-            match_elements = soup.find_all(attrs={'data-home': True, 'data-away': True})
+            # Try method 4: div with data-testid
+            match_elements = soup.find_all(attrs={'data-testid': lambda x: x and 'match' in str(x).lower()})
+            print(f"Method 4 (data-testid): Found {len(match_elements)} elements")
         
         if not match_elements:
-            # Try method 5: Find elements containing "vs" text pattern
-            all_text_elements = soup.find_all(string=re.compile(r'\w+\s+vs\s+\w+', re.I))
-            print(f"BBC scraper found {len(all_text_elements)} 'vs' patterns for {league_code}")
-            # This is a last resort - would need more complex parsing
+            # Try method 5: Look for any element containing "vs" or "v" between text
+            all_divs = soup.find_all(['div', 'li', 'article'])
+            for div in all_divs:
+                text = div.get_text(separator=' ', strip=True)
+                if re.search(r'\w+\s+v\s+\w+', text, re.I):
+                    match_elements.append(div)
+            print(f"Method 5 (text pattern matching): Found {len(match_elements)} elements")
         
         print(f"BBC scraper found {len(match_elements)} potential match elements for {league_code}")
         
@@ -100,55 +107,73 @@ def scrape_bbc_matches(league_code: str, date_str: str = None) -> List[Dict]:
 def parse_bbc_match_element(elem, league_code: str) -> Optional[Dict]:
     """Parse a single BBC match element into match data."""
     try:
-        # Extract team names
-        home_team_elem = elem.find('span', class_=re.compile('team-home'))
-        away_team_elem = elem.find('span', class_=re.compile('team-away'))
+        # BBC's current structure uses different approaches
+        # Try multiple methods to extract team names
         
-        if not home_team_elem or not away_team_elem:
-            # Try alternative selectors
-            teams = elem.find_all('span', class_=re.compile('team'))
-            if len(teams) >= 2:
-                home_team_elem = teams[0]
-                away_team_elem = teams[1]
-            else:
-                return None
-        
-        home_team = home_team_elem.get_text(strip=True)
-        away_team = away_team_elem.get_text(strip=True)
-        
-        # Extract scores
-        score_elem = elem.find('span', class_=re.compile('score'))
+        home_team = None
+        away_team = None
         home_score = 0
         away_score = 0
         status = "Scheduled"
         
-        if score_elem:
-            score_text = score_elem.get_text(strip=True)
-            # Format could be "2-1" or "2 - 1"
-            score_match = re.search(r'(\d+)\s*-\s*(\d+)', score_text)
-            if score_match:
-                home_score = int(score_match.group(1))
-                away_score = int(score_match.group(2))
+        # Method 1: Look for team name spans/divs with specific classes
+        team_elements = elem.find_all('span', class_=lambda x: x and 'team' in str(x).lower())
+        if not team_elements:
+            team_elements = elem.find_all('div', class_=lambda x: x and 'team' in str(x).lower())
+        
+        # Method 2: Look for abbr tags (BBC often uses these for team names)
+        if not team_elements or len(team_elements) < 2:
+            team_elements = elem.find_all('abbr', title=True)
+        
+        # Method 3: Look for elements with aria-label containing team names
+        if not team_elements or len(team_elements) < 2:
+            team_elements = elem.find_all(attrs={'aria-label': lambda x: x and 'v' in str(x).lower()})
+        
+        # Method 4: Just get all text and look for "X vs Y" pattern
+        if not team_elements or len(team_elements) < 2:
+            text = elem.get_text(separator=' | ', strip=True)
+            import re
+            vs_match = re.search(r'([A-Za-z\s]+)\s+v\s+([A-Za-z\s]+)', text, re.I)
+            if vs_match:
+                home_team = vs_match.group(1).strip()
+                away_team = vs_match.group(2).strip()
+        
+        # Extract team names if we found team elements
+        if not home_team and team_elements and len(team_elements) >= 2:
+            home_team = team_elements[0].get('title') or team_elements[0].get_text(strip=True)
+            away_team = team_elements[1].get('title') or team_elements[1].get_text(strip=True)
+        
+        if not home_team or not away_team:
+            return None
+        
+        # Extract scores - look for score elements
+        score_elements = elem.find_all(class_=lambda x: x and 'score' in str(x).lower())
+        if score_elements and len(score_elements) >= 2:
+            try:
+                home_score = int(score_elements[0].get_text(strip=True))
+                away_score = int(score_elements[1].get_text(strip=True))
                 status = "In Progress"
+            except:
+                pass
         
-        # Check if match is finished
-        status_elem = elem.find('span', class_=re.compile('status'))
-        if status_elem:
-            status_text = status_elem.get_text(strip=True).lower()
-            if 'ft' in status_text or 'full time' in status_text:
-                status = "FT"
-            elif 'ht' in status_text or 'half time' in status_text:
-                status = "HT"
-            elif any(word in status_text for word in ['live', 'min', "'"]):
-                status = status_text  # Show the minute
+        # Check for match status/time
+        time_elem = elem.find(class_=lambda x: x and ('time' in str(x).lower() or 'period' in str(x).lower()))
+        if time_elem:
+            time_text = time_elem.get_text(strip=True)
+            if time_text:
+                status = time_text
+                if "'" in time_text or 'min' in time_text.lower():
+                    status = time_text  # Live minute
+                elif 'ft' in time_text.lower() or 'full' in time_text.lower():
+                    status = "FT"
+                elif 'ht' in time_text.lower() or 'half' in time_text.lower():
+                    status = "HT"
         
-        # Check for kickoff time
-        time_elem = elem.find('span', class_=re.compile('time'))
-        if time_elem and status == "Scheduled":
-            kickoff = time_elem.get_text(strip=True)
-            status = kickoff
+        # Check for postponed/cancelled
+        if any(word in elem.get_text().lower() for word in ['postponed', 'cancelled', 'abandoned']):
+            status = "Postponed"
         
-        # Generate a pseudo event ID based on team names
+        # Generate event ID
         event_id = f"bbc_{league_code}_{home_team.replace(' ', '_')}_{away_team.replace(' ', '_')}"
         
         return {
