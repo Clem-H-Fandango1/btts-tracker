@@ -5,7 +5,7 @@ import os
 import pytz
 from flask import Flask, jsonify, render_template, request, session, redirect
 # Application version string.  Incremented when new features are added.
-APP_VERSION = "v2.4.1-debug-fixed"
+APP_VERSION = "v2.4.2-syntax-fixed"
 import requests
 from typing import Dict, List, Optional
 
@@ -1203,21 +1203,20 @@ def debug_dashboard():
     Comprehensive debug dashboard showing all app systems.
     Shows ESPN API, BBC scraper, manual matches, assignments, and system info.
     """
-    try:
-        import sys
-        import traceback
-        from datetime import datetime
-        
-        debug_data = {
-            "timestamp": datetime.now().isoformat(),
-            "version": APP_VERSION,
-            "espn_api": {},
-            "bbc_scraper": {},
-            "manual_matches": {},
-            "assignments": {},
-            "system": {},
-            "errors": []
-        }
+    import sys
+    import traceback
+    from datetime import datetime
+    
+    debug_data = {
+        "timestamp": datetime.now().isoformat(),
+        "version": APP_VERSION,
+        "espn_api": {},
+        "bbc_scraper": {},
+        "manual_matches": {},
+        "assignments": {},
+        "system": {},
+        "errors": []
+    }
     
     # Test ESPN API
     try:
@@ -1592,27 +1591,7 @@ def debug_dashboard():
     </body>
     </html>
     """
-        return html
-    except Exception as e:
-        # If debug dashboard crashes, show simple error page
-        import traceback
-        error_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Debug Error</title></head>
-        <body style="font-family: monospace; padding: 20px; background: #1a1a1a; color: #ff4444;">
-            <h1>❌ Debug Dashboard Error</h1>
-            <p>The debug dashboard encountered an error:</p>
-            <pre style="background: #2a2a2a; padding: 15px; border: 1px solid #ff4444;">
-{str(e)}
-
-{traceback.format_exc()}
-            </pre>
-            <p><a href="/admin" style="color: #00ff00;">← Back to Admin</a></p>
-        </body>
-        </html>
-        """
-        return error_html
+    return html
 
 
 @app.route("/admin")
