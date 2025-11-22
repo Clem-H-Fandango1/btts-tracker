@@ -525,21 +525,45 @@ def api_matches():
     """Return a JSON list of matches available on the given date.
 
     Optional query parameters:
-        date (str): Override the date used when querying ESPN in YYYYMMDD format.
+        date (str): Override the date used when querying APIs in YYYYMMDD format.
 
-    The endpoint iterates through all configured league codes and aggregates
-    the matches into a single list.  Matches are sorted alphabetically by
-    the match title for ease of selection on the frontend.
+    This endpoint uses multiple APIs (ESPN, TheSportsDB, Football-Data.org) to
+    aggregate matches from all configured league codes. Matches are deduplicated
+    and sorted alphabetically by match title for ease of selection on the frontend.
     """
     date_str = request.args.get("date")
     if date_str is None:
         date_str = get_today_date_str()
+    
     all_events: List[dict] = []
+    
+    # Try to import the multi-API aggregator
+    try:
+        from api_aggregator import fetch_all_matches, convert_to_app_format
+        use_aggregator = True
+    except ImportError:
+        use_aggregator = False
+    
     for league in LEAGUE_CODES:
-        scoreboard = fetch_scoreboard(league, date_str)
-        if scoreboard:
-            events = parse_events_from_scoreboard(scoreboard, league)
-            all_events.extend(events)
+        if use_aggregator:
+            try:
+                # Use multi-API aggregator (ESPN + TheSportsDB + Football-Data)
+                matches = fetch_all_matches(league, date_str)
+                converted = convert_to_app_format(matches)
+                all_events.extend(converted)
+            except Exception:
+                # Fallback to ESPN-only if aggregator fails
+                scoreboard = fetch_scoreboard(league, date_str)
+                if scoreboard:
+                    events = parse_events_from_scoreboard(scoreboard, league)
+                    all_events.extend(events)
+        else:
+            # ESPN-only (original behavior)
+            scoreboard = fetch_scoreboard(league, date_str)
+            if scoreboard:
+                events = parse_events_from_scoreboard(scoreboard, league)
+                all_events.extend(events)
+    
     # Sort events by title for better user experience
     all_events.sort(key=lambda e: e["title"])
     return jsonify(all_events)
